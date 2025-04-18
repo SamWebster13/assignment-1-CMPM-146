@@ -7,124 +7,143 @@ public class SteeringBehavior : MonoBehaviour
     public Vector3 target;
     public KinematicBehavior kinematic;
     public List<Vector3> path;
-    // you can use this label to show debug information,
-    // like the distance to the (next) target
     public TextMeshProUGUI label;
-    
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
+
+
+    public float cruiseSpeed = 15f;        // Max speed while cruising
+    public float accelerationTime = 3f;    // Time (in seconds) to reach cruiseSpeed
+    private float trueAcceleration;        // Calculated acceleration value
+
+
+    public float maxSpeed = 30f;
+    public float acceleration = 10f;
+    public float deceleration = 15f;
+    public float turnSpeed = 180f; // degrees per second
+    public float arrivalThreshold = 1f;
+    public float minSpeedToTurn = 10f;
+
+    private float currentSpeed = 0f;
+
     void Start()
     {
         kinematic = GetComponent<KinematicBehavior>();
         target = transform.position;
         path = null;
         EventBus.OnSetMap += SetMap;
+
+        trueAcceleration = cruiseSpeed / accelerationTime;
     }
 
-void Update()
-{
-    float angleDelta = 0f;  // Declare it here so it's visible throughout the method
-
-    // If there's a path, follow it
-    if (path != null && path.Count > 0)
+    void Update()
     {
-        Vector3 currentWaypoint = path[0];
-        target = currentWaypoint;
-
-        Vector3 currentPosition = transform.position;
-        Vector3 directionToTarget = target - currentPosition;
-        float distanceToTarget = directionToTarget.magnitude;
-
-        // Check if we're close enough to move on to the next waypoint
-        float baseArrivalRadius = 1.5f;
-
-        // Estimate next angle change (only if we have a "next" waypoint)
-        if (path.Count > 1)
+        if (path != null && path.Count > 0)
         {
-            Vector3 dirToCurrent = (path[0] - currentPosition).normalized;
-            Vector3 dirToNext = (path[1] - path[0]).normalized;
-            angleDelta = Vector3.Angle(dirToCurrent, dirToNext);
+            FollowPath();
         }
-
-        // Increase the arrival threshold if turning sharply
-        float dynamicArrivalRadius = baseArrivalRadius + angleDelta / 30f;
-
-        if (distanceToTarget < dynamicArrivalRadius)
+        else
         {
-            path.RemoveAt(0);
-            if (path.Count == 0)
+            MoveToTarget(target, true);
+        }
+    }
+
+    void FollowPath()
+    {
+        if (path.Count == 0)
+            return;
+
+        Vector3 currentTarget = path[0];
+
+        // If close to current waypoint, move to next
+        if (Vector3.Distance(transform.position, currentTarget) < arrivalThreshold)
+        {
+            if (path.Count > 1)
             {
-                kinematic.SetDesiredSpeed(0f);
-                kinematic.SetDesiredRotationalVelocity(0f);
+                path.RemoveAt(0); // Smooth transition
+                currentTarget = path[0];
+            }
+            else
+            {
+                MoveToTarget(currentTarget, true); // Last point 
                 return;
             }
-
-            // Recalculate for the new target
-            target = path[0];
-            directionToTarget = target - currentPosition;
-            distanceToTarget = directionToTarget.magnitude;
         }
+
+        MoveToTarget(currentTarget, false); // keep going
     }
 
-    // Default to single target if no path
-    Vector3 toTarget = target - transform.position;
-    float distance = toTarget.magnitude;
+    void MoveToTarget(Vector3 targetPos, bool finalTarget)
+{
+    Vector3 dir = targetPos - transform.position;
+    Vector3 flatDir = new Vector3(dir.x, 0, dir.z);
+    float distance = flatDir.magnitude;
 
-    if (label != null)
+    if (distance < arrivalThreshold && finalTarget)
     {
-        label.text = $"Dist: {distance:F2}";
-    }
-
-    if (distance < 1.5f && (path == null || path.Count == 0))
-    {
-        kinematic.SetDesiredSpeed(0f);
-        kinematic.SetDesiredRotationalVelocity(0f);
+        currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, deceleration * Time.deltaTime);
+        if (label) label.text = "Arrived!";
         return;
     }
 
-    // Rotation handling
-    Vector3 flatDir = new Vector3(toTarget.x, 0f, toTarget.z).normalized;
-    Vector3 forward = transform.forward;
-    float angle = Vector3.SignedAngle(forward, flatDir, Vector3.up);
+    flatDir.Normalize();
+    float angleToTarget = Vector3.SignedAngle(transform.forward, flatDir, Vector3.up);
+    float alignment = Mathf.Cos(Mathf.Deg2Rad * angleToTarget);
+	// Scale turning with speed 
+	float speedFactor = Mathf.Clamp01(currentSpeed / cruiseSpeed); 
+	float effectiveTurnSpeed = Mathf.Lerp(turnSpeed * 1.5f, turnSpeed * 1f, speedFactor); // slower turn at high speed
 
-    float maxRotVel = 90f;
-    float rotVel = Mathf.Clamp(angle, -maxRotVel, maxRotVel);
-    kinematic.SetDesiredRotationalVelocity(rotVel);
+	float steeringStrength = Mathf.Clamp(angleToTarget / 45f, -1f, 1f);
+	float turnAmount = steeringStrength * effectiveTurnSpeed * Time.deltaTime;
 
-    // Speed handling
-    float maxSpeed = 10f;
-    float slowdownFactor = 1f;
-
-    // Slow down if turning sharply (based on angle to target)
-    float turnSlowdown = Mathf.Clamp01(1f - Mathf.Abs(angle) / 90f);
-    slowdownFactor *= turnSlowdown;
-
-    // Slow down further if sharp corner is ahead (based on path angle delta)
-    if (angleDelta > 0f)
+    // Apply rotation only if moving
+    if (currentSpeed > 0.1f)
     {
-        float cornerSlowdown = Mathf.Clamp01(1f - angleDelta / 90f);
-        slowdownFactor *= cornerSlowdown;
+        float rotationFactor = Mathf.InverseLerp(0.5f, 5f, currentSpeed);
+        transform.Rotate(0, turnAmount * rotationFactor, 0);
     }
 
-    float speed = Mathf.Clamp(distance, 0f, maxSpeed * slowdownFactor);
-    kinematic.SetDesiredSpeed(speed);
+    // Set speed cap based on whether we're approaching the final target
+    float speedCap = finalTarget && distance < 5f ? cruiseSpeed * (distance / 5f) : cruiseSpeed;
+    if (currentSpeed < speedCap)
+    {
+        currentSpeed += trueAcceleration * Time.deltaTime;
+    }
+    else if (currentSpeed > speedCap)
+    {
+        currentSpeed -= deceleration * Time.deltaTime;
+    }
+
+    currentSpeed = Mathf.Clamp(currentSpeed, 0f, cruiseSpeed);
+    // Move forward in the direction the car is currently facing
+    transform.position += transform.forward * currentSpeed * Time.deltaTime;
+
+    // Debug info
+    // if (label)
+    // {
+        // label.text = $"Dist: {distance:F2}\nTurn: {angleToTarget:F1}°\nSpeed: {currentSpeed:F1}";
+    // }
 }
-
-
 
     public void SetTarget(Vector3 target)
     {
         this.target = target;
+        this.path = null;
         EventBus.ShowTarget(target);
     }
 
     public void SetPath(List<Vector3> path)
     {
-        this.path = path;
+        if (path == null || path.Count == 0) return;
+        this.path = new List<Vector3>(path);
+        this.target = path[path.Count - 1];
+        EventBus.ShowTarget(target);
     }
-
     public void SetMap(List<Wall> outline)
     {
         this.path = null;
         this.target = transform.position;
+    }
+    void OnDestroy()
+    {
+        EventBus.OnSetMap -= SetMap;
     }
 }
