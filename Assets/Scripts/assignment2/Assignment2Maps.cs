@@ -440,7 +440,7 @@ public class Assignment2Maps : MapCollection
                                           0, 0, -20,
                                         -20, 0, 20
                                          });
-
+ 
             AddNode(nodes, new float[] {-20, 0, -40,
                                         0, 0, -70,
                                         30, 0, -50,
