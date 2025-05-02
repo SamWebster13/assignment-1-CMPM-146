@@ -5,32 +5,69 @@ public class Assignment3Maps : MapCollection
 {
     public void StudentMaps(int which)
     {
-        /* you can create your own test cases:
-              create an outline (list of vertices); coordinates should range from ~-500 to +500; it's helpful to draw this on paper
-              put the outline into a float array and call OutlineFromArray
-              this will give you a List of Walls, which should pass to EventBus.SetMap
-
-           that's it; your NavMesh code will split the outline and generate the graph
-              
-        */
-
         if (which == 4)
         {
-            // make your own graph here
-
-            // Don't forget to call:
-            // EventBus.SetMap(outline);
-            
+            // Pentagon
+            List<Wall> outline = OutlineFromArray(new float[] {
+                0, 0, 100,
+                -95, 0, 31,
+                -59, 0, -81,
+                59, 0, -81,
+                95, 0, 31
+            });
+            EventBus.SetMap(outline);
         }
 
-        // .. maps 3-7 are available for your own test cases
+        if (which == 5)
+        {
+            // Concave arrow shape
+            List<Wall> outline = OutlineFromArray(new float[] {
+                0, 0, 100,
+                -75, 0, 0,
+                -25, 0, 0,
+                -25, 0, -100,
+                25, 0, -100,
+                25, 0, 0,
+                75, 0, 0
+            });
+            EventBus.SetMap(outline);
+        }
+
+        if (which == 6)
+        {
+            // U-shape
+            List<Wall> outline = OutlineFromArray(new float[] {
+                -100, 0, 100,
+                -100, 0, -100,
+                -25, 0, -100,
+                -25, 0, -25,
+                25, 0, -25,
+                25, 0, -100,
+                100, 0, -100,
+                100, 0, 100
+            });
+            EventBus.SetMap(outline);
+        }
 
         if (which == 7)
         {
-            // make your own graph here
+            // Star shape (complex concave)
+            List<Wall> outline = OutlineFromArray(new float[] {
+                0, 0, 100,
+                20, 0, 30,
+                100, 0, 30,
+                35, 0, -10,
+                60, 0, -80,
+                0, 0, -40,
+                -60, 0, -80,
+                -35, 0, -10,
+                -100, 0, 30,
+                -20, 0, 30
+            });
+            EventBus.SetMap(outline);
         }
-
     }
+
 
 
     public override void Generate(int which)

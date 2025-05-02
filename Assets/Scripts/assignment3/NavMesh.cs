@@ -1,36 +1,23 @@
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 public class NavMesh : MonoBehaviour
 {
-    // implement NavMesh generation here:
-    //    the outline are Walls in counterclockwise order
-    //    iterate over them, and if you find a reflex angle
-    //    you have to split the polygon into two
-    //    then perform the same operation on both parts
-    //    until no more reflex angles are present
-    //
-    //    when you have a number of polygons, you will have
-    //    to convert them into a graph: each polygon is a node
-    //    you can find neighbors by finding shared edges between
-    //    different polygons (or you can keep track of this while 
-    //    you are splitting)
     public Graph MakeNavMesh(List<Wall> outline)
     {
         Graph g = new Graph();
         g.all_nodes = new List<GraphNode>();
 
-        // Step 1: Convert walls to point list
+        // Convert walls to point list
         List<Vector3> vertices = new List<Vector3>();
         foreach (Wall w in outline)
             vertices.Add(w.start);
 
-        // Step 2: Recursively split into convex polygons
+        //Recursively split into convex polygons
         List<List<Vector3>> convexPolys = TriangulateRecursive(vertices, outline);
 
-        // Step 3: Turn each polygon into GraphNode
+        //Turn each polygon into GraphNode
         int id = 0;
         foreach (var polyVerts in convexPolys)
         {
@@ -43,7 +30,7 @@ public class NavMesh : MonoBehaviour
             g.all_nodes.Add(new GraphNode(id++, polyWalls));
         }
 
-        // Step 4: Add neighbors if they share an edge
+        //  Add neighbors 
         for (int i = 0; i < g.all_nodes.Count; i++)
         {
             for (int j = i + 1; j < g.all_nodes.Count; j++)
@@ -59,6 +46,10 @@ public class NavMesh : MonoBehaviour
                     {
                         if (polyA[edgeA].Same(polyB[edgeB]))
                         {
+                            bool isOriginalWall = outline.Any(w => w.Same(polyA[edgeA]));
+                            if (isOriginalWall)
+                                continue;
+
                             a.AddNeighbor(b, edgeA);
                             b.AddNeighbor(a, edgeB);
                         }
@@ -88,13 +79,30 @@ public class NavMesh : MonoBehaviour
             Vector3 a = polygon[i];
             Vector3 b = polygon[(i + 1) % polygon.Count];
 
-            // Don't check edge that shares a vertex with our split
+            // Don't check edges that share vertices
             if ((a == from || b == from || a == to || b == to)) continue;
 
             Wall edge = new Wall(a, b);
             if (testWall.Crosses(edge)) return false;
         }
         return true;
+    }
+
+    bool IsPointInsidePolygon(Vector3 point, List<Vector3> polygon)
+    {
+        int count = 0;
+        for (int i = 0; i < polygon.Count; i++)
+        {
+            Vector3 a = polygon[i];
+            Vector3 b = polygon[(i + 1) % polygon.Count];
+
+            if (((a.z > point.z) != (b.z > point.z)) &&
+                (point.x < (b.x - a.x) * (point.z - a.z) / (b.z - a.z + 0.0001f) + a.x))
+            {
+                count++;
+            }
+        }
+        return count % 2 == 1; 
     }
 
     List<List<Vector3>> TriangulateRecursive(List<Vector3> polygon, List<Wall> original)
@@ -114,7 +122,6 @@ public class NavMesh : MonoBehaviour
 
             if (IsReflex(prev, curr, next))
             {
-                // Try to find a visible vertex to split
                 for (int j = 0; j < polygon.Count; j++)
                 {
                     if (j == i || j == (i - 1 + polygon.Count) % polygon.Count || j == (i + 1) % polygon.Count)
@@ -122,20 +129,22 @@ public class NavMesh : MonoBehaviour
 
                     if (IsVisible(curr, polygon[j], polygon))
                     {
+                        Vector3 midpoint = (curr + polygon[j]) / 2f;
+                        if (!IsPointInsidePolygon(midpoint, polygon))
+                            continue;
+
                         List<Vector3> poly1 = new List<Vector3>();
                         List<Vector3> poly2 = new List<Vector3>();
 
                         int a = i;
-                        int b = j;
-
-                        while (a != b)
+                        while (a != j)
                         {
                             poly1.Add(polygon[a]);
                             a = (a + 1) % polygon.Count;
                         }
-                        poly1.Add(polygon[b]);
+                        poly1.Add(polygon[j]);
 
-                        b = j;
+                        int b = j;
                         while (b != i)
                         {
                             poly2.Add(polygon[b]);
@@ -151,24 +160,19 @@ public class NavMesh : MonoBehaviour
             }
         }
 
-        // No reflex found — this is convex
+        // If no reflex found, add polygon as convex
         output.Add(polygon);
     }
 
-
     List<Wall> outline;
 
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
         EventBus.OnSetMap += SetMap;
     }
 
-    // Update is called once per frame
     void Update()
     {
-       
-
     }
 
     public void SetMap(List<Wall> outline)
@@ -180,9 +184,4 @@ public class NavMesh : MonoBehaviour
             EventBus.SetGraph(navmesh);
         }
     }
-
-    
-
-
-    
 }
